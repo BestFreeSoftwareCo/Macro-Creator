@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "default_start_stop_hotkey": "F6",
+  "default_stop_hotkey": "ESC",
+  "max_steps": 50000,
+  "tos_accepted": false,
+  "discord_prompt_dismissed": false
+}

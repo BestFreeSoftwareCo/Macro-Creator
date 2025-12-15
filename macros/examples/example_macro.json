@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "name": "Example Macro",
+  "hotkeys": {
+    "start_stop": "F6",
+    "stop": "ESC"
+  },
+  "settings": {
+    "repeat": 2
+  },
+  "actions": [
+    { "type": "wait", "duration_ms": 500 },
+    { "type": "click", "button": "left" },
+    { "type": "wait", "duration_ms": 250 },
+    { "type": "key_press", "key": "a" }
+  ]
+}
