@@ -5,6 +5,7 @@ from typing import Any
 
 from PySide6.QtCore import QEvent, QTimer, Signal, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -46,6 +47,9 @@ class ActionsListWidget(QListWidget):
 
 
 class ActionDialog(QDialog):
+    _favorite_types: set[str] = set()
+    _recent_types: list[str] = []
+
     def __init__(
         self,
         parent: QWidget,
@@ -59,28 +63,46 @@ class ActionDialog(QDialog):
         self._allow_post_action = allow_post_action
         self._post_action: dict[str, Any] | None = None
 
-        self._action_type = QComboBox()
-        self._action_type.addItems(
-            [
-                "click",
-                "click_at",
-                "key_press",
-                "key_down",
-                "key_up",
-                "type_text",
-                "hotkey",
-                "mouse_down",
-                "mouse_up",
-                "move_mouse",
-                "move_mouse_rel",
-                "drag_to",
-                "scroll",
-                "wait",
-                "wait_random",
-                "wait_for_image",
-                "click_image",
-            ]
-        )
+        self._action_defs: list[dict[str, str]] = [
+            {"type": "click", "label": "Click", "category": "Mouse", "description": "Click using the chosen mouse button."},
+            {"type": "click_at", "label": "Click At", "category": "Mouse", "description": "Click at an exact X/Y position."},
+            {"type": "mouse_down", "label": "Mouse Down", "category": "Mouse", "description": "Hold a mouse button (optionally at X/Y)."},
+            {"type": "mouse_up", "label": "Mouse Up", "category": "Mouse", "description": "Release a mouse button (optionally at X/Y)."},
+            {"type": "move_mouse", "label": "Move Mouse", "category": "Mouse", "description": "Move the mouse to an X/Y position."},
+            {"type": "move_mouse_rel", "label": "Move Mouse (Relative)", "category": "Mouse", "description": "Move the mouse by DX/DY."},
+            {"type": "drag_to", "label": "Drag To", "category": "Mouse", "description": "Click-and-drag to an X/Y position."},
+            {"type": "scroll", "label": "Scroll", "category": "Mouse", "description": "Scroll up/down by an amount."},
+            {"type": "key_press", "label": "Key Press", "category": "Keyboard", "description": "Press a single key."},
+            {"type": "key_down", "label": "Key Down", "category": "Keyboard", "description": "Hold a key down."},
+            {"type": "key_up", "label": "Key Up", "category": "Keyboard", "description": "Release a key."},
+            {"type": "type_text", "label": "Type Text", "category": "Keyboard", "description": "Type a string (optionally with an interval)."},
+            {"type": "hotkey", "label": "Hotkey", "category": "Keyboard", "description": "Press a key combination (e.g. ctrl+shift+x)."},
+            {"type": "wait", "label": "Wait", "category": "Timing", "description": "Wait for a fixed duration."},
+            {"type": "wait_random", "label": "Random Wait", "category": "Timing", "description": "Wait a random duration between min/max."},
+            {"type": "wait_for_image", "label": "Wait For Image", "category": "Images", "description": "Wait until an image appears on screen."},
+            {"type": "click_image", "label": "Click Image", "category": "Images", "description": "Find an image on screen and click its center."},
+        ]
+
+        self._action_search = QLineEdit()
+        self._action_search.setPlaceholderText("Search actions...")
+
+        self._action_category = QComboBox()
+        self._action_category.addItems(["All", "Favorites", "Recent", "Mouse", "Keyboard", "Timing", "Images"])
+
+        self._favorite_toggle = QPushButton("Favorite")
+
+        self._action_list = QListWidget()
+        self._action_list.setMinimumWidth(260)
+
+        self._action_desc = QLabel("")
+        self._action_desc.setWordWrap(True)
+        self._action_desc.setStyleSheet("color: #6B7280;")
+
+        self._preview = QPlainTextEdit()
+        self._preview.setReadOnly(True)
+        self._preview.setMinimumHeight(140)
+        self._preview.setPlaceholderText("JSON preview...")
+        self._copy_json_btn = QPushButton("Copy JSON")
 
         self._stack = QStackedWidget()
         self._build_pages()
@@ -91,9 +113,18 @@ class ActionDialog(QDialog):
         self._post_summary = QLabel("")
         self._post_summary.setStyleSheet("color: #6B7280;")
 
-        form = QFormLayout()
-        form.addRow("Action", self._action_type)
-        form.addRow(self._stack)
+        left = QVBoxLayout()
+        left.addWidget(self._action_search)
+        left.addWidget(self._action_category)
+        left.addWidget(self._favorite_toggle)
+        left.addWidget(self._action_list, 1)
+
+        right = QVBoxLayout()
+        right.addWidget(self._action_desc)
+        right.addWidget(self._stack, 1)
+        right.addWidget(QLabel("JSON Preview"))
+        right.addWidget(self._preview)
+        right.addWidget(self._copy_json_btn)
 
         if self._allow_post_action:
             post_row = QHBoxLayout()
@@ -105,15 +136,27 @@ class ActionDialog(QDialog):
             post_box = QVBoxLayout()
             post_box.addLayout(post_row)
             post_box.addWidget(self._post_summary)
-            form.addRow(post_box)
+            right.addLayout(post_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
 
         root = QVBoxLayout(self)
-        root.addLayout(form)
+        content = QHBoxLayout()
+        left_w = QWidget()
+        left_w.setLayout(left)
+        content.addWidget(left_w)
+
+        right_w = QWidget()
+        right_w.setLayout(right)
+        content.addWidget(right_w, 1)
+        root.addLayout(content)
         root.addWidget(buttons)
 
-        self._action_type.currentIndexChanged.connect(self._sync_stack)
+        self._action_search.textChanged.connect(self._refresh_action_list)
+        self._action_category.currentIndexChanged.connect(self._refresh_action_list)
+        self._action_list.currentRowChanged.connect(lambda _row: self._sync_stack())
+        self._favorite_toggle.clicked.connect(self._toggle_favorite)
+        self._copy_json_btn.clicked.connect(self._copy_preview_json)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -123,8 +166,11 @@ class ActionDialog(QDialog):
             self._post_clear_btn.clicked.connect(self._clear_post_action)
 
         self._apply_initial(initial)
+        self._refresh_action_list()
         self._sync_stack()
         self._sync_post_state()
+        self._wire_preview_events()
+        self._update_preview()
 
     def get_action(self) -> dict[str, Any] | None:
         if self.exec() != QDialog.DialogCode.Accepted:
@@ -134,7 +180,171 @@ class ActionDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Invalid", f"{type(e).__name__}: {e}")
             return None
+
+        t = str(action.get("type") or "").strip()
+        if t:
+            recents = [x for x in self._recent_types if x != t]
+            recents.insert(0, t)
+            self._recent_types = recents[:15]
         return action
+
+    def _refresh_action_list(self) -> None:
+        query = (self._action_search.text() or "").strip().lower()
+        cat = (self._action_category.currentText() or "All").strip()
+
+        def matches(defn: dict[str, str]) -> bool:
+            if cat == "Favorites" and defn["type"] not in self._favorite_types:
+                return False
+            if cat == "Recent" and defn["type"] not in self._recent_types:
+                return False
+            if cat not in ("All", "Favorites", "Recent") and defn["category"] != cat:
+                return False
+            if not query:
+                return True
+            hay = (defn["type"] + " " + defn["label"] + " " + defn["category"] + " " + defn["description"]).lower()
+            return query in hay
+
+        selected_type = self._selected_action_type()
+        self._action_list.blockSignals(True)
+        self._action_list.clear()
+
+        defs = [d for d in self._action_defs if matches(d)]
+        if cat == "Recent":
+            order = {t: i for i, t in enumerate(self._recent_types)}
+            defs.sort(key=lambda d: order.get(d["type"], 9999))
+        else:
+            defs.sort(key=lambda d: (d["category"], d["label"]))
+
+        for d in defs:
+            star = "★ " if d["type"] in self._favorite_types else ""
+            item = QListWidgetItem(f"{star}{d['label']}")
+            item.setData(Qt.ItemDataRole.UserRole, d["type"])
+            self._action_list.addItem(item)
+
+        self._action_list.blockSignals(False)
+
+        if selected_type:
+            row = self._find_action_row(selected_type)
+            if row >= 0:
+                self._action_list.setCurrentRow(row)
+                return
+
+        if self._action_list.count() > 0:
+            self._action_list.setCurrentRow(0)
+
+    def _find_action_row(self, action_type: str) -> int:
+        for i in range(self._action_list.count()):
+            item = self._action_list.item(i)
+            if item and item.data(Qt.ItemDataRole.UserRole) == action_type:
+                return i
+        return -1
+
+    def _selected_action_type(self) -> str:
+        item = self._action_list.currentItem()
+        if item is None:
+            return ""
+        t = item.data(Qt.ItemDataRole.UserRole)
+        return str(t or "")
+
+    def _toggle_favorite(self) -> None:
+        t = self._selected_action_type()
+        if not t:
+            return
+        if t in self._favorite_types:
+            self._favorite_types.remove(t)
+        else:
+            self._favorite_types.add(t)
+        self._refresh_action_list()
+        self._sync_stack()
+
+    def _set_selected_action_type(self, action_type: str) -> None:
+        if not action_type:
+            return
+        row = self._find_action_row(action_type)
+        if row >= 0:
+            self._action_list.setCurrentRow(row)
+
+    def _wire_preview_events(self) -> None:
+        def safe_connect(obj: Any, signal_name: str) -> None:
+            try:
+                sig = getattr(obj, signal_name)
+                sig.connect(self._update_preview)
+            except Exception:
+                pass
+
+        widgets: list[Any] = [
+            self._click_button,
+            self._click_at_x,
+            self._click_at_y,
+            self._click_at_button,
+            self._key_text,
+            self._wait_value,
+            self._wait_unit,
+            self._waitr_min,
+            self._waitr_max,
+            self._waitr_unit,
+            self._move_x,
+            self._move_y,
+            self._move_duration,
+            self._scroll_amount,
+            self._scroll_anchor,
+            self._type_text_text,
+            self._type_text_interval_ms,
+            self._hotkey_keys,
+            self._mouse_button,
+            self._mouse_at_pos,
+            self._mouse_x,
+            self._mouse_y,
+            self._move_rel_dx,
+            self._move_rel_dy,
+            self._move_rel_duration,
+            self._drag_x,
+            self._drag_y,
+            self._drag_button,
+            self._drag_duration,
+            self._wfi_value,
+            self._wfi_confidence,
+            self._wfi_timeout_ms,
+            self._wfi_interval_ms,
+            self._wfi_use_region,
+            self._wfi_region_x,
+            self._wfi_region_y,
+            self._wfi_region_w,
+            self._wfi_region_h,
+            self._ci_value,
+            self._ci_button,
+            self._ci_confidence,
+            self._ci_timeout_ms,
+            self._ci_interval_ms,
+            self._ci_use_region,
+            self._ci_region_x,
+            self._ci_region_y,
+            self._ci_region_w,
+            self._ci_region_h,
+        ]
+
+        for w in widgets:
+            safe_connect(w, "textChanged")
+            safe_connect(w, "valueChanged")
+            safe_connect(w, "currentIndexChanged")
+            safe_connect(w, "toggled")
+
+        if self._allow_post_action:
+            safe_connect(self._post_enabled, "toggled")
+
+    def _update_preview(self) -> None:
+        try:
+            action = self._build_action_dict()
+            self._preview.setPlainText(json.dumps(action, indent=2))
+        except Exception as e:
+            self._preview.setPlainText(f"{type(e).__name__}: {e}")
+
+    def _copy_preview_json(self) -> None:
+        text = self._preview.toPlainText()
+        if not text.strip():
+            return
+        cb = QApplication.clipboard()
+        cb.setText(text)
 
     def _build_pages(self) -> None:
         self._click_button = QComboBox()
@@ -427,9 +637,8 @@ class ActionDialog(QDialog):
             return
 
         t = str(initial.get("type", ""))
-        idx = self._action_type.findText(t)
-        if idx >= 0:
-            self._action_type.setCurrentIndex(idx)
+        if t:
+            self._set_selected_action_type(t)
 
         if t == "click":
             b = str(initial.get("button", "left"))
@@ -552,7 +761,20 @@ class ActionDialog(QDialog):
             self._post_summary.setText(self._format_action_inline(post))
 
     def _sync_stack(self) -> None:
-        t = self._action_type.currentText()
+        t = self._selected_action_type()
+        if not t:
+            t = "click"
+
+        is_fav = t in self._favorite_types
+        self._favorite_toggle.setText("Unfavorite" if is_fav else "Favorite")
+
+        desc = ""
+        for d in self._action_defs:
+            if d["type"] == t:
+                desc = f"{d['label']}  —  {d['description']}"
+                break
+        self._action_desc.setText(desc)
+
         mapping = {
             "click": 0,
             "click_at": 1,
@@ -573,6 +795,7 @@ class ActionDialog(QDialog):
             "click_image": 13,
         }
         self._stack.setCurrentIndex(mapping.get(t, 0))
+        self._update_preview()
 
     def _sync_post_state(self) -> None:
         if not self._allow_post_action:
@@ -585,6 +808,7 @@ class ActionDialog(QDialog):
         if not enabled:
             self._post_action = None
             self._post_summary.setText("")
+        self._update_preview()
 
     def _pick_post_action(self) -> None:
         dlg = ActionDialog(self, title="Post Action", initial=self._post_action, allow_post_action=False)
@@ -593,14 +817,16 @@ class ActionDialog(QDialog):
             return
         self._post_action = action
         self._post_summary.setText(self._format_action_inline(action))
+        self._update_preview()
 
     def _clear_post_action(self) -> None:
         self._post_action = None
         if self._allow_post_action:
             self._post_summary.setText("")
+        self._update_preview()
 
     def _build_action_dict(self) -> dict[str, Any]:
-        t = self._action_type.currentText()
+        t = self._selected_action_type() or "click"
         action: dict[str, Any]
 
         if t == "click":
@@ -1605,8 +1831,23 @@ class SimpleModeWidget(QWidget):
                 self._keyboard.remove_hotkey(self._hotkey_toggle_id)
             if self._hotkey_stop_id is not None:
                 self._keyboard.remove_hotkey(self._hotkey_stop_id)
+
+            try:
+                if hasattr(self._keyboard, "unhook_all_hotkeys"):
+                    self._keyboard.unhook_all_hotkeys()
+                elif hasattr(self._keyboard, "clear_all_hotkeys"):
+                    self._keyboard.clear_all_hotkeys()
+            except Exception:
+                pass
+
+            try:
+                if hasattr(self._keyboard, "unhook_all"):
+                    self._keyboard.unhook_all()
+            except Exception:
+                pass
         except Exception:
             pass
         finally:
             self._hotkey_toggle_id = None
             self._hotkey_stop_id = None
+            self._keyboard = None

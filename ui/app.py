@@ -74,6 +74,12 @@ class MainWindow(QMainWindow):
             self._advanced_mode.cleanup()
         except Exception:
             pass
-        self._simple_mode.cleanup()
-        self._engine.shutdown()
+        try:
+            self._simple_mode.cleanup()
+        except Exception:
+            pass
+        try:
+            self._engine.shutdown()
+        except Exception:
+            pass
         super().closeEvent(event)
