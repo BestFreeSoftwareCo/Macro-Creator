@@ -60,7 +60,27 @@ class ActionDialog(QDialog):
         self._post_action: dict[str, Any] | None = None
 
         self._action_type = QComboBox()
-        self._action_type.addItems(["click", "click_at", "key_press", "wait", "wait_random", "move_mouse", "scroll"])
+        self._action_type.addItems(
+            [
+                "click",
+                "click_at",
+                "key_press",
+                "key_down",
+                "key_up",
+                "type_text",
+                "hotkey",
+                "mouse_down",
+                "mouse_up",
+                "move_mouse",
+                "move_mouse_rel",
+                "drag_to",
+                "scroll",
+                "wait",
+                "wait_random",
+                "wait_for_image",
+                "click_image",
+            ]
+        )
 
         self._stack = QStackedWidget()
         self._build_pages()
@@ -203,6 +223,205 @@ class ActionDialog(QDialog):
         l.addRow(self._scroll_anchor)
         self._stack.addWidget(self._scroll_page)
 
+        self._type_text_text = QLineEdit()
+        self._type_text_interval_ms = QSpinBox()
+        self._type_text_interval_ms.setRange(0, 5000)
+        self._type_text_interval_ms.setValue(0)
+        self._type_text_page = QWidget()
+        l = QFormLayout(self._type_text_page)
+        l.addRow("Text", self._type_text_text)
+        l.addRow("Interval (ms)", self._type_text_interval_ms)
+        self._stack.addWidget(self._type_text_page)
+
+        self._hotkey_keys = QLineEdit()
+        self._hotkey_keys.setPlaceholderText("ctrl+shift+x")
+        self._hotkey_page = QWidget()
+        l = QFormLayout(self._hotkey_page)
+        l.addRow("Keys", self._hotkey_keys)
+        self._stack.addWidget(self._hotkey_page)
+
+        self._mouse_button = QComboBox()
+        self._mouse_button.addItems(["left", "right", "middle"])
+        self._mouse_at_pos = QCheckBox("At position")
+        self._mouse_x = QSpinBox()
+        self._mouse_x.setRange(-100000, 100000)
+        self._mouse_y = QSpinBox()
+        self._mouse_y.setRange(-100000, 100000)
+        self._mouse_use_mouse = QPushButton("Use Current Mouse")
+        self._mouse_page = QWidget()
+        l = QFormLayout(self._mouse_page)
+        l.addRow("Button", self._mouse_button)
+        l.addRow(self._mouse_at_pos)
+
+        mouse_pos_row = QHBoxLayout()
+        mouse_pos_row.addWidget(QLabel("X"))
+        mouse_pos_row.addWidget(self._mouse_x)
+        mouse_pos_row.addWidget(QLabel("Y"))
+        mouse_pos_row.addWidget(self._mouse_y)
+        mouse_pos_row.addWidget(self._mouse_use_mouse)
+        mouse_pos_w = QWidget()
+        mouse_pos_w.setLayout(mouse_pos_row)
+        l.addRow(mouse_pos_w)
+
+        self._mouse_use_mouse.clicked.connect(self._fill_mouse_from_mouse)
+        self._mouse_at_pos.toggled.connect(self._sync_mouse_pos_state)
+        self._sync_mouse_pos_state()
+        self._stack.addWidget(self._mouse_page)
+
+        self._move_rel_dx = QSpinBox()
+        self._move_rel_dx.setRange(-100000, 100000)
+        self._move_rel_dy = QSpinBox()
+        self._move_rel_dy.setRange(-100000, 100000)
+        self._move_rel_duration = QDoubleSpinBox()
+        self._move_rel_duration.setRange(0.0, 60.0)
+        self._move_rel_duration.setDecimals(3)
+        self._move_rel_duration.setValue(0.0)
+        self._move_rel_page = QWidget()
+        l = QFormLayout(self._move_rel_page)
+        l.addRow("DX", self._move_rel_dx)
+        l.addRow("DY", self._move_rel_dy)
+        l.addRow("Move Duration (sec)", self._move_rel_duration)
+        self._stack.addWidget(self._move_rel_page)
+
+        self._drag_x = QSpinBox()
+        self._drag_x.setRange(-100000, 100000)
+        self._drag_y = QSpinBox()
+        self._drag_y.setRange(-100000, 100000)
+        self._drag_button = QComboBox()
+        self._drag_button.addItems(["left", "right", "middle"])
+        self._drag_use_mouse = QPushButton("Use Current Mouse")
+        self._drag_duration = QDoubleSpinBox()
+        self._drag_duration.setRange(0.0, 60.0)
+        self._drag_duration.setDecimals(3)
+        self._drag_duration.setValue(0.0)
+        self._drag_page = QWidget()
+        l = QFormLayout(self._drag_page)
+        l.addRow("X", self._drag_x)
+        l.addRow("Y", self._drag_y)
+        l.addRow("Button", self._drag_button)
+        l.addRow(self._drag_use_mouse)
+        l.addRow("Drag Duration (sec)", self._drag_duration)
+        self._drag_use_mouse.clicked.connect(self._fill_drag_from_mouse)
+        self._stack.addWidget(self._drag_page)
+
+        self._wfi_value = QLineEdit()
+        self._wfi_browse = QPushButton("Browse")
+        wfi_path_row = QHBoxLayout()
+        wfi_path_row.addWidget(self._wfi_value, 1)
+        wfi_path_row.addWidget(self._wfi_browse)
+        wfi_path_w = QWidget()
+        wfi_path_w.setLayout(wfi_path_row)
+
+        self._wfi_confidence = QDoubleSpinBox()
+        self._wfi_confidence.setRange(0.0, 1.0)
+        self._wfi_confidence.setDecimals(2)
+        self._wfi_confidence.setSingleStep(0.05)
+        self._wfi_confidence.setValue(0.9)
+
+        self._wfi_timeout_ms = QSpinBox()
+        self._wfi_timeout_ms.setRange(0, 3600000)
+        self._wfi_timeout_ms.setValue(0)
+
+        self._wfi_interval_ms = QSpinBox()
+        self._wfi_interval_ms.setRange(10, 60000)
+        self._wfi_interval_ms.setValue(200)
+
+        self._wfi_use_region = QCheckBox("Use region")
+        self._wfi_region_x = QSpinBox()
+        self._wfi_region_x.setRange(0, 100000)
+        self._wfi_region_y = QSpinBox()
+        self._wfi_region_y.setRange(0, 100000)
+        self._wfi_region_w = QSpinBox()
+        self._wfi_region_w.setRange(0, 100000)
+        self._wfi_region_h = QSpinBox()
+        self._wfi_region_h.setRange(0, 100000)
+
+        wfi_region_row = QHBoxLayout()
+        wfi_region_row.addWidget(QLabel("X"))
+        wfi_region_row.addWidget(self._wfi_region_x)
+        wfi_region_row.addWidget(QLabel("Y"))
+        wfi_region_row.addWidget(self._wfi_region_y)
+        wfi_region_row.addWidget(QLabel("W"))
+        wfi_region_row.addWidget(self._wfi_region_w)
+        wfi_region_row.addWidget(QLabel("H"))
+        wfi_region_row.addWidget(self._wfi_region_h)
+        wfi_region_w = QWidget()
+        wfi_region_w.setLayout(wfi_region_row)
+
+        self._wait_for_image_page = QWidget()
+        l = QFormLayout(self._wait_for_image_page)
+        l.addRow("Image", wfi_path_w)
+        l.addRow("Confidence", self._wfi_confidence)
+        l.addRow("Timeout (ms, 0=inf)", self._wfi_timeout_ms)
+        l.addRow("Check Interval (ms)", self._wfi_interval_ms)
+        l.addRow(self._wfi_use_region)
+        l.addRow(wfi_region_w)
+        self._wfi_browse.clicked.connect(self._browse_wfi)
+        self._wfi_use_region.toggled.connect(self._sync_wfi_region_state)
+        self._sync_wfi_region_state()
+        self._stack.addWidget(self._wait_for_image_page)
+
+        self._ci_value = QLineEdit()
+        self._ci_browse = QPushButton("Browse")
+        ci_path_row = QHBoxLayout()
+        ci_path_row.addWidget(self._ci_value, 1)
+        ci_path_row.addWidget(self._ci_browse)
+        ci_path_w = QWidget()
+        ci_path_w.setLayout(ci_path_row)
+
+        self._ci_button = QComboBox()
+        self._ci_button.addItems(["left", "right", "middle"])
+
+        self._ci_confidence = QDoubleSpinBox()
+        self._ci_confidence.setRange(0.0, 1.0)
+        self._ci_confidence.setDecimals(2)
+        self._ci_confidence.setSingleStep(0.05)
+        self._ci_confidence.setValue(0.9)
+
+        self._ci_timeout_ms = QSpinBox()
+        self._ci_timeout_ms.setRange(0, 3600000)
+        self._ci_timeout_ms.setValue(0)
+
+        self._ci_interval_ms = QSpinBox()
+        self._ci_interval_ms.setRange(10, 60000)
+        self._ci_interval_ms.setValue(200)
+
+        self._ci_use_region = QCheckBox("Use region")
+        self._ci_region_x = QSpinBox()
+        self._ci_region_x.setRange(0, 100000)
+        self._ci_region_y = QSpinBox()
+        self._ci_region_y.setRange(0, 100000)
+        self._ci_region_w = QSpinBox()
+        self._ci_region_w.setRange(0, 100000)
+        self._ci_region_h = QSpinBox()
+        self._ci_region_h.setRange(0, 100000)
+
+        ci_region_row = QHBoxLayout()
+        ci_region_row.addWidget(QLabel("X"))
+        ci_region_row.addWidget(self._ci_region_x)
+        ci_region_row.addWidget(QLabel("Y"))
+        ci_region_row.addWidget(self._ci_region_y)
+        ci_region_row.addWidget(QLabel("W"))
+        ci_region_row.addWidget(self._ci_region_w)
+        ci_region_row.addWidget(QLabel("H"))
+        ci_region_row.addWidget(self._ci_region_h)
+        ci_region_w = QWidget()
+        ci_region_w.setLayout(ci_region_row)
+
+        self._click_image_page = QWidget()
+        l = QFormLayout(self._click_image_page)
+        l.addRow("Image", ci_path_w)
+        l.addRow("Button", self._ci_button)
+        l.addRow("Confidence", self._ci_confidence)
+        l.addRow("Timeout (ms, 0=inf)", self._ci_timeout_ms)
+        l.addRow("Check Interval (ms)", self._ci_interval_ms)
+        l.addRow(self._ci_use_region)
+        l.addRow(ci_region_w)
+        self._ci_browse.clicked.connect(self._browse_ci)
+        self._ci_use_region.toggled.connect(self._sync_ci_region_state)
+        self._sync_ci_region_state()
+        self._stack.addWidget(self._click_image_page)
+
     def _apply_initial(self, initial: dict[str, Any] | None) -> None:
         if not initial:
             return
@@ -226,8 +445,47 @@ class ActionDialog(QDialog):
             if i >= 0:
                 self._click_at_button.setCurrentIndex(i)
 
-        elif t == "key_press":
+        elif t in ("key_press", "key_down", "key_up"):
             self._key_text.setText(str(initial.get("key", "")))
+
+        elif t == "type_text":
+            self._type_text_text.setText(str(initial.get("text", "")))
+            self._type_text_interval_ms.setValue(int(initial.get("interval_ms", 0) or 0))
+
+        elif t == "hotkey":
+            keys = initial.get("keys")
+            if isinstance(keys, list):
+                self._hotkey_keys.setText("+".join(str(k) for k in keys))
+            else:
+                self._hotkey_keys.setText(str(keys or ""))
+
+        elif t in ("mouse_down", "mouse_up"):
+            b = str(initial.get("button", "left"))
+            i = self._mouse_button.findText(b)
+            if i >= 0:
+                self._mouse_button.setCurrentIndex(i)
+            x = initial.get("x")
+            y = initial.get("y")
+            if (x is not None) and (y is not None):
+                self._mouse_at_pos.setChecked(True)
+                self._mouse_x.setValue(int(x))
+                self._mouse_y.setValue(int(y))
+            else:
+                self._mouse_at_pos.setChecked(False)
+
+        elif t == "move_mouse_rel":
+            self._move_rel_dx.setValue(int(initial.get("dx", 0) or 0))
+            self._move_rel_dy.setValue(int(initial.get("dy", 0) or 0))
+            self._move_rel_duration.setValue(max(0.0, float(initial.get("duration_ms", 0) or 0) / 1000.0))
+
+        elif t == "drag_to":
+            self._drag_x.setValue(int(initial.get("x", 0) or 0))
+            self._drag_y.setValue(int(initial.get("y", 0) or 0))
+            b = str(initial.get("button", "left"))
+            i = self._drag_button.findText(b)
+            if i >= 0:
+                self._drag_button.setCurrentIndex(i)
+            self._drag_duration.setValue(max(0.0, float(initial.get("duration_ms", 0) or 0) / 1000.0))
 
         elif t == "wait":
             ms = float(initial.get("duration_ms", 250) or 0)
@@ -250,6 +508,43 @@ class ActionDialog(QDialog):
             self._scroll_amount.setValue(int(initial.get("amount", 240) or 0))
             self._scroll_anchor.setChecked((initial.get("x") is not None) and (initial.get("y") is not None))
 
+        elif t == "wait_for_image":
+            self._wfi_value.setText(str(initial.get("value", "")))
+            self._wfi_confidence.setValue(float(initial.get("confidence", 0.9) or 0.9))
+            self._wfi_timeout_ms.setValue(int(initial.get("timeout_ms", 0) or 0))
+            self._wfi_interval_ms.setValue(int(initial.get("interval_ms", 200) or 200))
+
+            region = initial.get("region")
+            if isinstance(region, (list, tuple)) and len(region) == 4:
+                self._wfi_use_region.setChecked(True)
+                self._wfi_region_x.setValue(int(region[0]))
+                self._wfi_region_y.setValue(int(region[1]))
+                self._wfi_region_w.setValue(int(region[2]))
+                self._wfi_region_h.setValue(int(region[3]))
+            else:
+                self._wfi_use_region.setChecked(False)
+
+        elif t == "click_image":
+            self._ci_value.setText(str(initial.get("value", "")))
+            b = str(initial.get("button", "left"))
+            i = self._ci_button.findText(b)
+            if i >= 0:
+                self._ci_button.setCurrentIndex(i)
+
+            self._ci_confidence.setValue(float(initial.get("confidence", 0.9) or 0.9))
+            self._ci_timeout_ms.setValue(int(initial.get("timeout_ms", 0) or 0))
+            self._ci_interval_ms.setValue(int(initial.get("interval_ms", 200) or 200))
+
+            region = initial.get("region")
+            if isinstance(region, (list, tuple)) and len(region) == 4:
+                self._ci_use_region.setChecked(True)
+                self._ci_region_x.setValue(int(region[0]))
+                self._ci_region_y.setValue(int(region[1]))
+                self._ci_region_w.setValue(int(region[2]))
+                self._ci_region_h.setValue(int(region[3]))
+            else:
+                self._ci_use_region.setChecked(False)
+
         post = initial.get("post_action")
         if self._allow_post_action and isinstance(post, dict):
             self._post_action = post
@@ -262,10 +557,20 @@ class ActionDialog(QDialog):
             "click": 0,
             "click_at": 1,
             "key_press": 2,
+            "key_down": 2,
+            "key_up": 2,
             "wait": 3,
             "wait_random": 4,
             "move_mouse": 5,
             "scroll": 6,
+            "type_text": 7,
+            "hotkey": 8,
+            "mouse_down": 9,
+            "mouse_up": 9,
+            "move_mouse_rel": 10,
+            "drag_to": 11,
+            "wait_for_image": 12,
+            "click_image": 13,
         }
         self._stack.setCurrentIndex(mapping.get(t, 0))
 
@@ -309,11 +614,25 @@ class ActionDialog(QDialog):
                 "button": self._click_at_button.currentText(),
             }
 
-        elif t == "key_press":
+        elif t in ("key_press", "key_down", "key_up"):
             key = (self._key_text.text() or "").strip()
             if not key:
                 raise ValueError("key is required")
-            action = {"type": "key_press", "key": key}
+            action = {"type": t, "key": key}
+
+        elif t == "type_text":
+            text = self._type_text_text.text()
+            action = {
+                "type": "type_text",
+                "text": str(text),
+                "interval_ms": int(self._type_text_interval_ms.value()),
+            }
+
+        elif t == "hotkey":
+            keys = (self._hotkey_keys.text() or "").strip()
+            if not keys:
+                raise ValueError("keys are required")
+            action = {"type": "hotkey", "keys": keys}
 
         elif t == "wait":
             ms = self._duration_to_ms(self._wait_value.value(), self._wait_unit.currentText())
@@ -324,6 +643,12 @@ class ActionDialog(QDialog):
             max_ms = self._duration_to_ms(self._waitr_max.value(), self._waitr_unit.currentText())
             action = {"type": "wait_random", "min_ms": int(min_ms), "max_ms": int(max_ms)}
 
+        elif t in ("mouse_down", "mouse_up"):
+            action = {"type": t, "button": self._mouse_button.currentText()}
+            if self._mouse_at_pos.isChecked():
+                action["x"] = int(self._mouse_x.value())
+                action["y"] = int(self._mouse_y.value())
+
         elif t == "move_mouse":
             action = {
                 "type": "move_mouse",
@@ -332,12 +657,68 @@ class ActionDialog(QDialog):
                 "duration_ms": int(round(float(self._move_duration.value()) * 1000.0)),
             }
 
+        elif t == "move_mouse_rel":
+            action = {
+                "type": "move_mouse_rel",
+                "dx": int(self._move_rel_dx.value()),
+                "dy": int(self._move_rel_dy.value()),
+                "duration_ms": int(round(float(self._move_rel_duration.value()) * 1000.0)),
+            }
+
+        elif t == "drag_to":
+            action = {
+                "type": "drag_to",
+                "x": int(self._drag_x.value()),
+                "y": int(self._drag_y.value()),
+                "button": self._drag_button.currentText(),
+                "duration_ms": int(round(float(self._drag_duration.value()) * 1000.0)),
+            }
+
         elif t == "scroll":
             action = {"type": "scroll", "amount": int(self._scroll_amount.value())}
             if self._scroll_anchor.isChecked():
                 pos = pyautogui.position()
                 action["x"] = int(pos.x)
                 action["y"] = int(pos.y)
+
+        elif t == "wait_for_image":
+            value = (self._wfi_value.text() or "").strip()
+            if not value:
+                raise ValueError("image is required")
+            action = {
+                "type": "wait_for_image",
+                "value": value,
+                "confidence": float(self._wfi_confidence.value()),
+                "timeout_ms": int(self._wfi_timeout_ms.value()),
+                "interval_ms": int(self._wfi_interval_ms.value()),
+            }
+            if self._wfi_use_region.isChecked():
+                action["region"] = [
+                    int(self._wfi_region_x.value()),
+                    int(self._wfi_region_y.value()),
+                    int(self._wfi_region_w.value()),
+                    int(self._wfi_region_h.value()),
+                ]
+
+        elif t == "click_image":
+            value = (self._ci_value.text() or "").strip()
+            if not value:
+                raise ValueError("image is required")
+            action = {
+                "type": "click_image",
+                "value": value,
+                "button": self._ci_button.currentText(),
+                "confidence": float(self._ci_confidence.value()),
+                "timeout_ms": int(self._ci_timeout_ms.value()),
+                "interval_ms": int(self._ci_interval_ms.value()),
+            }
+            if self._ci_use_region.isChecked():
+                action["region"] = [
+                    int(self._ci_region_x.value()),
+                    int(self._ci_region_y.value()),
+                    int(self._ci_region_w.value()),
+                    int(self._ci_region_h.value()),
+                ]
 
         else:
             raise ValueError(f"Unknown action type: {t}")
@@ -365,14 +746,49 @@ class ActionDialog(QDialog):
             return f"Click At ({action.get('x', 0)}, {action.get('y', 0)})"
         if t == "key_press":
             return f"Key Press ({action.get('key', '')})"
+        if t == "key_down":
+            return f"Key Down ({action.get('key', '')})"
+        if t == "key_up":
+            return f"Key Up ({action.get('key', '')})"
+        if t == "type_text":
+            text = str(action.get("text", ""))
+            text = text.replace("\n", "\\n")
+            if len(text) > 20:
+                text = text[:20] + "..."
+            return f"Type Text ({text})"
+        if t == "hotkey":
+            keys = action.get("keys")
+            if isinstance(keys, list):
+                keys_s = "+".join(str(k) for k in keys)
+            else:
+                keys_s = str(keys or "")
+            return f"Hotkey ({keys_s})"
         if t == "wait":
             return f"Wait ({action.get('duration_ms', 0)} ms)"
         if t == "wait_random":
             return f"Random Wait ({action.get('min_ms', 0)}-{action.get('max_ms', 0)} ms)"
+        if t == "mouse_down":
+            base = f"Mouse Down ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return base
+        if t == "mouse_up":
+            base = f"Mouse Up ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return base
         if t == "move_mouse":
             return f"Move Mouse ({action.get('x', 0)}, {action.get('y', 0)})"
+        if t == "move_mouse_rel":
+            return f"Move Mouse Rel ({action.get('dx', 0)}, {action.get('dy', 0)})"
+        if t == "drag_to":
+            return f"Drag To ({action.get('x', 0)}, {action.get('y', 0)})"
         if t == "scroll":
             return f"Scroll ({action.get('amount', 0)})"
+        if t == "wait_for_image":
+            return f"Wait For Image ({action.get('value', '')})"
+        if t == "click_image":
+            return f"Click Image ({action.get('value', '')})"
         return json.dumps(action)
 
     def _fill_click_at_from_mouse(self) -> None:
@@ -384,6 +800,50 @@ class ActionDialog(QDialog):
         pos = pyautogui.position()
         self._move_x.setValue(int(pos.x))
         self._move_y.setValue(int(pos.y))
+
+    def _sync_mouse_pos_state(self) -> None:
+        enabled = self._mouse_at_pos.isChecked()
+        self._mouse_x.setEnabled(enabled)
+        self._mouse_y.setEnabled(enabled)
+        self._mouse_use_mouse.setEnabled(enabled)
+
+    def _fill_mouse_from_mouse(self) -> None:
+        pos = pyautogui.position()
+        self._mouse_x.setValue(int(pos.x))
+        self._mouse_y.setValue(int(pos.y))
+
+    def _fill_drag_from_mouse(self) -> None:
+        pos = pyautogui.position()
+        self._drag_x.setValue(int(pos.x))
+        self._drag_y.setValue(int(pos.y))
+
+    def _sync_wfi_region_state(self) -> None:
+        enabled = self._wfi_use_region.isChecked()
+        self._wfi_region_x.setEnabled(enabled)
+        self._wfi_region_y.setEnabled(enabled)
+        self._wfi_region_w.setEnabled(enabled)
+        self._wfi_region_h.setEnabled(enabled)
+
+    def _sync_ci_region_state(self) -> None:
+        enabled = self._ci_use_region.isChecked()
+        self._ci_region_x.setEnabled(enabled)
+        self._ci_region_y.setEnabled(enabled)
+        self._ci_region_w.setEnabled(enabled)
+        self._ci_region_h.setEnabled(enabled)
+
+    def _browse_wfi(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+        )
+        if path:
+            self._wfi_value.setText(path)
+
+    def _browse_ci(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+        )
+        if path:
+            self._ci_value.setText(path)
 
 
 class SimpleModeWidget(QWidget):
@@ -416,7 +876,27 @@ class SimpleModeWidget(QWidget):
         self._repeat_forever = QCheckBox("Repeat until stopped")
 
         self._action_type = QComboBox()
-        self._action_type.addItems(["click", "click_at", "key_press", "wait", "wait_random", "move_mouse", "scroll"])
+        self._action_type.addItems(
+            [
+                "click",
+                "click_at",
+                "key_press",
+                "key_down",
+                "key_up",
+                "type_text",
+                "hotkey",
+                "mouse_down",
+                "mouse_up",
+                "move_mouse",
+                "move_mouse_rel",
+                "drag_to",
+                "scroll",
+                "wait",
+                "wait_random",
+                "wait_for_image",
+                "click_image",
+            ]
+        )
 
         self._quick_delay_ms = QSpinBox()
         self._quick_delay_ms.setRange(0, 3600000)
@@ -722,6 +1202,37 @@ class SimpleModeWidget(QWidget):
         if t == "key_press":
             base = f"Key Press ({action.get('key', '')})"
             return self._append_post_action(base, action)
+        if t == "key_down":
+            base = f"Key Down ({action.get('key', '')})"
+            return self._append_post_action(base, action)
+        if t == "key_up":
+            base = f"Key Up ({action.get('key', '')})"
+            return self._append_post_action(base, action)
+        if t == "type_text":
+            text = str(action.get("text", ""))
+            text = text.replace("\n", "\\n")
+            if len(text) > 20:
+                text = text[:20] + "..."
+            base = f"Type Text ({text})"
+            return self._append_post_action(base, action)
+        if t == "hotkey":
+            keys = action.get("keys")
+            if isinstance(keys, list):
+                keys_s = "+".join(str(k) for k in keys)
+            else:
+                keys_s = str(keys or "")
+            base = f"Hotkey ({keys_s})"
+            return self._append_post_action(base, action)
+        if t == "mouse_down":
+            base = f"Mouse Down ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return self._append_post_action(base, action)
+        if t == "mouse_up":
+            base = f"Mouse Up ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return self._append_post_action(base, action)
         if t == "wait":
             base = f"Wait ({action.get('duration_ms', 0)} ms)"
             return self._append_post_action(base, action)
@@ -731,12 +1242,30 @@ class SimpleModeWidget(QWidget):
         if t == "move_mouse":
             base = f"Move Mouse ({action.get('x', 0)}, {action.get('y', 0)}) ({action.get('duration_ms', 0)} ms)"
             return self._append_post_action(base, action)
+        if t == "move_mouse_rel":
+            base = (
+                f"Move Mouse Rel ({action.get('dx', 0)}, {action.get('dy', 0)})"
+                f" ({action.get('duration_ms', 0)} ms)"
+            )
+            return self._append_post_action(base, action)
+        if t == "drag_to":
+            base = (
+                f"Drag To ({action.get('x', 0)}, {action.get('y', 0)})"
+                f" ({action.get('button', 'left')}) ({action.get('duration_ms', 0)} ms)"
+            )
+            return self._append_post_action(base, action)
         if t == "scroll":
             amount = action.get('amount', 0)
             if action.get('x') is not None and action.get('y') is not None:
                 base = f"Scroll ({amount}) at ({action.get('x')}, {action.get('y')})"
                 return self._append_post_action(base, action)
             base = f"Scroll ({amount})"
+            return self._append_post_action(base, action)
+        if t == "wait_for_image":
+            base = f"Wait For Image ({action.get('value', '')})"
+            return self._append_post_action(base, action)
+        if t == "click_image":
+            base = f"Click Image ({action.get('value', '')})"
             return self._append_post_action(base, action)
         return json.dumps(action)
 
@@ -754,14 +1283,49 @@ class SimpleModeWidget(QWidget):
             return f"Click At ({action.get('x', 0)}, {action.get('y', 0)})"
         if t == "key_press":
             return f"Key Press ({action.get('key', '')})"
+        if t == "key_down":
+            return f"Key Down ({action.get('key', '')})"
+        if t == "key_up":
+            return f"Key Up ({action.get('key', '')})"
+        if t == "type_text":
+            text = str(action.get("text", ""))
+            text = text.replace("\n", "\\n")
+            if len(text) > 20:
+                text = text[:20] + "..."
+            return f"Type Text ({text})"
+        if t == "hotkey":
+            keys = action.get("keys")
+            if isinstance(keys, list):
+                keys_s = "+".join(str(k) for k in keys)
+            else:
+                keys_s = str(keys or "")
+            return f"Hotkey ({keys_s})"
         if t == "wait":
             return f"Wait ({action.get('duration_ms', 0)} ms)"
         if t == "wait_random":
             return f"Random Wait ({action.get('min_ms', 0)}-{action.get('max_ms', 0)} ms)"
+        if t == "mouse_down":
+            base = f"Mouse Down ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return base
+        if t == "mouse_up":
+            base = f"Mouse Up ({action.get('button', 'left')})"
+            if action.get("x") is not None and action.get("y") is not None:
+                base += f" at ({action.get('x')}, {action.get('y')})"
+            return base
         if t == "move_mouse":
             return f"Move Mouse ({action.get('x', 0)}, {action.get('y', 0)})"
+        if t == "move_mouse_rel":
+            return f"Move Mouse Rel ({action.get('dx', 0)}, {action.get('dy', 0)})"
+        if t == "drag_to":
+            return f"Drag To ({action.get('x', 0)}, {action.get('y', 0)})"
         if t == "scroll":
             return f"Scroll ({action.get('amount', 0)})"
+        if t == "wait_for_image":
+            return f"Wait For Image ({action.get('value', '')})"
+        if t == "click_image":
+            return f"Click Image ({action.get('value', '')})"
         return json.dumps(action)
 
     def _build_macro(self) -> dict[str, Any]:

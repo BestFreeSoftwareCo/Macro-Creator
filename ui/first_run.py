@@ -8,9 +8,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -19,6 +22,38 @@ from PyMacroStudio.core.settings import AppSettings
 
 
 DISCORD_INVITE_URL = "https://discord.com/invite/498tyUUaBw"
+
+_ACCESS_KEY_CODES = [
+    83,
+    110,
+    111,
+    111,
+    112,
+    121,
+    39,
+    115,
+    32,
+    72,
+    97,
+    110,
+    103,
+    111,
+    117,
+    116,
+    32,
+    43,
+    32,
+    77,
+    97,
+    99,
+    114,
+    111,
+    115,
+]
+
+
+def _expected_access_key() -> str:
+    return "".join(chr(c) for c in _ACCESS_KEY_CODES)
 
 
 def ensure_terms_accepted(parent: QWidget, settings: AppSettings) -> AppSettings | None:
@@ -30,6 +65,17 @@ def ensure_terms_accepted(parent: QWidget, settings: AppSettings) -> AppSettings
         return None
 
     return replace(settings, tos_accepted=True)
+
+
+def ensure_access_key(parent: QWidget, settings: AppSettings) -> AppSettings | None:
+    if settings.access_key_verified:
+        return settings
+
+    dlg = AccessKeyDialog(parent)
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+
+    return replace(settings, access_key_verified=True)
 
 
 def maybe_show_discord_prompt(parent: QWidget, settings: AppSettings) -> AppSettings:
@@ -105,5 +151,59 @@ class TermsOfServiceDialog(QDialog):
     def _on_accept(self) -> None:
         if not self._agree_checkbox.isChecked():
             QMessageBox.warning(self, "Required", "You must check the box to agree.")
+            return
+        self.accept()
+
+
+class AccessKeyDialog(QDialog):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Access Key")
+        self.setModal(True)
+
+        self._message = QLabel(
+            "An access key is required to use this app.\n"
+            "Join the Discord server to get your key, then paste it below."
+        )
+        self._message.setWordWrap(True)
+
+        self._join_discord = QPushButton("Join Discord Server")
+        self._join_discord.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(DISCORD_INVITE_URL)))
+
+        self._key_input = QLineEdit()
+        self._key_input.setPlaceholderText("Paste access key here")
+
+        self._buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Verify")
+        self._buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Exit")
+
+        join_row = QHBoxLayout()
+        join_row.addWidget(self._join_discord)
+        join_row.addStretch(1)
+
+        root = QVBoxLayout(self)
+        root.addWidget(self._message)
+
+        join_w = QWidget()
+        join_w.setLayout(join_row)
+        root.addWidget(join_w)
+
+        root.addWidget(QLabel("Access Key"))
+        root.addWidget(self._key_input)
+        root.addWidget(self._buttons)
+
+        self._buttons.accepted.connect(self._on_accept)
+        self._buttons.rejected.connect(self.reject)
+
+    def _on_accept(self) -> None:
+        entered = (self._key_input.text() or "").strip()
+        if entered != _expected_access_key():
+            QMessageBox.warning(
+                self,
+                "Invalid",
+                "Invalid access key. Join the Discord server to get the correct key.",
+            )
             return
         self.accept()

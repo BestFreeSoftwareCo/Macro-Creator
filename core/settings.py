@@ -12,6 +12,7 @@ class AppSettings:
     max_steps: int
     tos_accepted: bool
     discord_prompt_dismissed: bool
+    access_key_verified: bool
 
 
 def load_settings() -> AppSettings:
@@ -21,6 +22,7 @@ def load_settings() -> AppSettings:
         max_steps=50000,
         tos_accepted=False,
         discord_prompt_dismissed=False,
+        access_key_verified=False,
     )
 
     path = project_root() / "config" / "settings.json"
@@ -46,6 +48,7 @@ def load_settings() -> AppSettings:
 
     tos_accepted = bool(data.get("tos_accepted", defaults.tos_accepted))
     discord_prompt_dismissed = bool(data.get("discord_prompt_dismissed", defaults.discord_prompt_dismissed))
+    access_key_verified = bool(data.get("access_key_verified", defaults.access_key_verified))
 
     return AppSettings(
         default_start_stop_hotkey=start_stop,
@@ -53,6 +56,7 @@ def load_settings() -> AppSettings:
         max_steps=max_steps,
         tos_accepted=tos_accepted,
         discord_prompt_dismissed=discord_prompt_dismissed,
+        access_key_verified=access_key_verified,
     )
 
 
@@ -66,5 +70,6 @@ def save_settings(settings: AppSettings) -> None:
         "max_steps": int(settings.max_steps),
         "tos_accepted": bool(settings.tos_accepted),
         "discord_prompt_dismissed": bool(settings.discord_prompt_dismissed),
+        "access_key_verified": bool(settings.access_key_verified),
     }
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")

@@ -23,9 +23,7 @@ _TEMPLATE_CACHE: "OrderedDict[str, Any]" = OrderedDict()
 _TEMPLATE_CACHE_MAX = 32
 
 
-def image_found(check: ImageCheck) -> bool:
-    template_path = _resolve_image_path(check.value)
-
+def _get_template(template_path: Path) -> Any:
     cache_key = str(template_path)
     template = _TEMPLATE_CACHE.get(cache_key)
     if template is None:
@@ -38,6 +36,13 @@ def image_found(check: ImageCheck) -> bool:
             _TEMPLATE_CACHE.popitem(last=False)
     else:
         _TEMPLATE_CACHE.move_to_end(cache_key)
+    return template
+
+
+def image_found(check: ImageCheck) -> bool:
+    template_path = _resolve_image_path(check.value)
+
+    template = _get_template(template_path)
 
     screenshot = pyautogui.screenshot(region=check.region)
     screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
@@ -48,6 +53,29 @@ def image_found(check: ImageCheck) -> bool:
     result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return float(max_val) >= float(check.confidence)
+
+
+def find_image_center(check: ImageCheck) -> tuple[int, int] | None:
+    template_path = _resolve_image_path(check.value)
+    template = _get_template(template_path)
+
+    screenshot = pyautogui.screenshot(region=check.region)
+    screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
+
+    if screen.shape[0] < template.shape[0] or screen.shape[1] < template.shape[1]:
+        return None
+
+    result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    if float(max_val) < float(check.confidence):
+        return None
+
+    cx = int(max_loc[0] + (template.shape[1] / 2.0))
+    cy = int(max_loc[1] + (template.shape[0] / 2.0))
+    if check.region is not None:
+        cx += int(check.region[0])
+        cy += int(check.region[1])
+    return cx, cy
 
 
 def _resolve_image_path(value: str) -> Path:

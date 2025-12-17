@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QTabWidget
 from PyMacroStudio.core.macro_engine import MacroEngine
 from PyMacroStudio.core.settings import load_settings, save_settings
 from PyMacroStudio.ui.advanced_mode import AdvancedModeWidget
-from PyMacroStudio.ui.first_run import ensure_terms_accepted, maybe_show_discord_prompt
+from PyMacroStudio.ui.first_run import ensure_access_key, ensure_terms_accepted, maybe_show_discord_prompt
 from PyMacroStudio.ui.simple_mode import SimpleModeWidget
 
 
@@ -18,6 +18,14 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
 
         updated = ensure_terms_accepted(self, self._settings)
+        if updated is None:
+            QTimer.singleShot(0, lambda: (QApplication.instance() and QApplication.instance().quit()))
+            return
+        if updated != self._settings:
+            self._settings = updated
+            save_settings(self._settings)
+
+        updated = ensure_access_key(self, self._settings)
         if updated is None:
             QTimer.singleShot(0, lambda: (QApplication.instance() and QApplication.instance().quit()))
             return

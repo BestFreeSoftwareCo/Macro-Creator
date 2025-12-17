@@ -75,8 +75,29 @@ def _validate_actions(actions: Any, *, ctx: str) -> None:
             _require_int(action, "y", ctx=action_ctx)
             continue
 
-        if action_type == "key_press":
+        if action_type in ("key_press", "key_down", "key_up"):
             _require_str(action, "key", ctx=action_ctx)
+            continue
+
+        if action_type == "type_text":
+            text = action.get("text")
+            if not isinstance(text, str):
+                raise MacroValidationError(f"{action_ctx}.text must be a string")
+            interval_ms = _optional_int(action, "interval_ms", ctx=action_ctx)
+            if interval_ms is not None and interval_ms < 0:
+                raise MacroValidationError(f"{action_ctx}.interval_ms must be >= 0")
+            continue
+
+        if action_type == "hotkey":
+            keys = action.get("keys")
+            if isinstance(keys, str):
+                if not keys.strip():
+                    raise MacroValidationError(f"{action_ctx}.keys must be a non-empty string")
+            elif isinstance(keys, list):
+                if not keys or not all(isinstance(k, str) and k.strip() for k in keys):
+                    raise MacroValidationError(f"{action_ctx}.keys must be a list of non-empty strings")
+            else:
+                raise MacroValidationError(f"{action_ctx}.keys must be a string or list")
             continue
 
         if action_type == "wait":
@@ -88,9 +109,36 @@ def _validate_actions(actions: Any, *, ctx: str) -> None:
             _require_int(action, "max_ms", ctx=action_ctx)
             continue
 
+        if action_type in ("mouse_down", "mouse_up"):
+            button = action.get("button", "left")
+            if not isinstance(button, str) or not button.strip():
+                raise MacroValidationError(f"{action_ctx}.button must be a string")
+            x = _optional_int(action, "x", ctx=action_ctx)
+            y = _optional_int(action, "y", ctx=action_ctx)
+            if (x is None) != (y is None):
+                raise MacroValidationError(f"{action_ctx}.x and .y must be provided together")
+            continue
+
         if action_type == "move_mouse":
             _require_int(action, "x", ctx=action_ctx)
             _require_int(action, "y", ctx=action_ctx)
+            if "duration_ms" in action and action.get("duration_ms") is not None:
+                _require_int(action, "duration_ms", ctx=action_ctx)
+            continue
+
+        if action_type == "move_mouse_rel":
+            _require_int(action, "dx", ctx=action_ctx)
+            _require_int(action, "dy", ctx=action_ctx)
+            if "duration_ms" in action and action.get("duration_ms") is not None:
+                _require_int(action, "duration_ms", ctx=action_ctx)
+            continue
+
+        if action_type == "drag_to":
+            _require_int(action, "x", ctx=action_ctx)
+            _require_int(action, "y", ctx=action_ctx)
+            button = action.get("button", "left")
+            if not isinstance(button, str) or not button.strip():
+                raise MacroValidationError(f"{action_ctx}.button must be a string")
             if "duration_ms" in action and action.get("duration_ms") is not None:
                 _require_int(action, "duration_ms", ctx=action_ctx)
             continue
@@ -99,6 +147,37 @@ def _validate_actions(actions: Any, *, ctx: str) -> None:
             _require_int(action, "amount", ctx=action_ctx)
             _optional_int(action, "x", ctx=action_ctx)
             _optional_int(action, "y", ctx=action_ctx)
+            continue
+
+        if action_type in ("wait_for_image", "click_image"):
+            _require_str(action, "value", ctx=action_ctx)
+
+            confidence = _optional_float(action, "confidence", ctx=action_ctx)
+            if confidence is not None and not (0.0 <= confidence <= 1.0):
+                raise MacroValidationError(f"{action_ctx}.confidence must be between 0 and 1")
+
+            region = action.get("region")
+            if region is not None:
+                if not (
+                    isinstance(region, (list, tuple))
+                    and len(region) == 4
+                    and all(isinstance(v, (int, float)) for v in region)
+                ):
+                    raise MacroValidationError(f"{action_ctx}.region must be [x, y, w, h]")
+
+            timeout_ms = _optional_int(action, "timeout_ms", ctx=action_ctx)
+            if timeout_ms is not None and timeout_ms < 0:
+                raise MacroValidationError(f"{action_ctx}.timeout_ms must be >= 0")
+
+            interval_ms = _optional_int(action, "interval_ms", ctx=action_ctx)
+            if interval_ms is not None and interval_ms < 0:
+                raise MacroValidationError(f"{action_ctx}.interval_ms must be >= 0")
+
+            if action_type == "click_image":
+                button = action.get("button", "left")
+                if not isinstance(button, str) or not button.strip():
+                    raise MacroValidationError(f"{action_ctx}.button must be a string")
+
             continue
 
         if action_type == "if":
@@ -121,10 +200,13 @@ def _validate_actions(actions: Any, *, ctx: str) -> None:
             else:
                 raise MacroValidationError(f"{action_ctx}.check unsupported")
 
-            if "timeout_ms" in action and action.get("timeout_ms") is not None:
-                _require_int(action, "timeout_ms", ctx=action_ctx)
-            if "interval_ms" in action and action.get("interval_ms") is not None:
-                _require_int(action, "interval_ms", ctx=action_ctx)
+            timeout_ms = _optional_int(action, "timeout_ms", ctx=action_ctx)
+            if timeout_ms is not None and timeout_ms < 0:
+                raise MacroValidationError(f"{action_ctx}.timeout_ms must be >= 0")
+
+            interval_ms = _optional_int(action, "interval_ms", ctx=action_ctx)
+            if interval_ms is not None and interval_ms < 0:
+                raise MacroValidationError(f"{action_ctx}.interval_ms must be >= 0")
 
             on_true = action.get("on_true", [])
             on_false = action.get("on_false", [])

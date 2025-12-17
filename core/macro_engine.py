@@ -6,7 +6,7 @@ from typing import Any
 import pyautogui
 
 from PyMacroStudio.core.action_runner import ActionRunner
-from PyMacroStudio.core.condition_checker import image_found, parse_image_check
+from PyMacroStudio.core.condition_checker import find_image_center, image_found, parse_image_check
 from PyMacroStudio.core.safety import configure_safety
 
 
@@ -156,6 +156,12 @@ class MacroEngine:
         if action_type == "if":
             steps += 1
             steps = self._execute_if(action, steps=steps, max_steps=max_steps)
+        elif action_type == "wait_for_image":
+            steps += 1
+            self._execute_wait_for_image(action)
+        elif action_type == "click_image":
+            steps += 1
+            self._execute_click_image(action)
         else:
             self._runner.run_action(action, self._log)
             steps += 1
@@ -183,6 +189,87 @@ class MacroEngine:
             steps = self._execute_one_action(post_action, steps=steps, max_steps=max_steps)
 
         return steps
+
+    def _execute_wait_for_image(self, action: dict[str, Any]) -> None:
+        timeout_ms = action.get("timeout_ms", 0)
+        interval_ms = action.get("interval_ms", 200)
+
+        try:
+            timeout_s = max(0.0, float(timeout_ms) / 1000.0)
+        except Exception:
+            timeout_s = 0.0
+
+        try:
+            interval_s = max(0.01, float(interval_ms) / 1000.0)
+        except Exception:
+            interval_s = 0.2
+
+        check = parse_image_check(action)
+        self._log(f"wait_for_image value={check.value}")
+
+        start = time.time()
+        while True:
+            if self._stop_event.is_set():
+                self._log("stop requested")
+                return
+
+            self._pause_event.wait()
+
+            matched = image_found(check)
+            if matched:
+                self._log("wait_for_image found")
+                return
+
+            if timeout_s > 0 and (time.time() - start) >= timeout_s:
+                break
+
+            time.sleep(interval_s)
+
+        self._log("wait_for_image not found")
+
+    def _execute_click_image(self, action: dict[str, Any]) -> None:
+        timeout_ms = action.get("timeout_ms", 0)
+        interval_ms = action.get("interval_ms", 200)
+        button = str(action.get("button", "left"))
+
+        try:
+            timeout_s = max(0.0, float(timeout_ms) / 1000.0)
+        except Exception:
+            timeout_s = 0.0
+
+        try:
+            interval_s = max(0.01, float(interval_ms) / 1000.0)
+        except Exception:
+            interval_s = 0.2
+
+        check = parse_image_check(action)
+        self._log(f"click_image value={check.value}")
+
+        start = time.time()
+        pos: tuple[int, int] | None = None
+        while True:
+            if self._stop_event.is_set():
+                self._log("stop requested")
+                return
+
+            self._pause_event.wait()
+
+            pos = find_image_center(check)
+            if pos is not None:
+                break
+
+            if timeout_s > 0 and (time.time() - start) >= timeout_s:
+                break
+
+            time.sleep(interval_s)
+
+        if pos is None:
+            self._log("click_image not found")
+            return
+
+        x, y = pos
+        pyautogui.click(x=int(x), y=int(y), button=button)
+        self._log(f"click_image x={int(x)} y={int(y)} button={button}")
 
     def _execute_if(self, action: dict[str, Any], *, steps: int, max_steps: int) -> int:
         check_type = action.get("check")
